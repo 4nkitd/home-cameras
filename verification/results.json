@@ -1,0 +1,62 @@
+{
+  "date": "2026-09-15T08:42:32.474Z",
+  "results": [
+    {
+      "name": "Four tiles fit 1440×900, 1920×1080 and 1280×720 without vertical or horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "D-pad spatial navigation, Enter fullscreen, Escape restores selected camera focus",
+      "passed": true
+    },
+    {
+      "name": "Compact home bar filters views and all actions stay on one TV row",
+      "passed": true
+    },
+    {
+      "name": "Discovery flow, required credentials, simulated preview, favourite and save to home",
+      "passed": true
+    },
+    {
+      "name": "Manual URL validation rejects non-RTSP and embedded credentials, permits anonymous stream",
+      "passed": true
+    },
+    {
+      "name": "Wrong-password outcome, retry with corrected outcome, unreachable outcome",
+      "passed": true
+    },
+    {
+      "name": "Scan cancellation stops pending transitions, no-results outcome works",
+      "passed": true
+    },
+    {
+      "name": "Edit preserves typed values across favourite toggle; reorder and removal cancellation",
+      "passed": true
+    },
+    {
+      "name": "Six-slot layout, settings persistence and quality/audio UI feedback",
+      "passed": true
+    },
+    {
+      "name": "Network recovery and individual camera retry",
+      "passed": true
+    },
+    {
+      "name": "Dialog Tab trap, close focus return and text caret arrow preservation",
+      "passed": true
+    },
+    {
+      "name": "Empty-slot setup restores its initiating focus and edited fields stay visible",
+      "passed": true
+    },
+    {
+      "name": "All review links render, all 28 states fit horizontally at 1440px and 390px",
+      "passed": true
+    },
+    {
+      "name": "No JavaScript/resource errors and no external camera or image requests",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

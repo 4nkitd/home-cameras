@@ -1,0 +1,23 @@
+logLevel: warn
+rtsp: yes
+rtspAddress: 127.0.0.1:8554
+rtspTransports: [tcp]
+rtspAuthMethods: [basic, digest]
+rtmp: no
+hls: no
+webrtc: no
+srt: no
+api: no
+authMethod: internal
+authInternalUsers:
+  - user: viewer
+    pass: test-camera-only
+    permissions:
+      - action: read
+  - user: publisher
+    pass: test-publisher-only
+    permissions:
+      - action: publish
+paths:
+  front:
+  sub:

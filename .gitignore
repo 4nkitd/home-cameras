@@ -1,0 +1,37 @@
+.DS_Store
+.ruff_cache/
+*.log
+
+# Built APKs and packaging artifacts (keep release notes in source)
+releases/
+*.apk
+*.aab
+Home-Cameras-Design-*.zip
+
+# Signing material must never be committed
+*.jks
+*.keystore
+**/debug.keystore
+**/key.properties
+
+# Flutter / Android local machine state
+tv_app/.dart_tool/
+tv_app/.flutter-plugins-dependencies
+tv_app/.packages
+tv_app/build/
+tv_app/.pub-cache/
+tv_app/.pub/
+tv_app/coverage/
+tv_app/android/local.properties
+tv_app/android/.gradle/
+tv_app/android/app/debug/
+tv_app/android/app/profile/
+tv_app/android/app/release/
+tv_app/**/*.iml
+tv_app/.idea/
+tv_app/.widget_preview/
+
+# Editor
+.idea/
+*.iml
+.vscode/
