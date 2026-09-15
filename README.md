@@ -14,7 +14,13 @@ Local-network IP camera viewer for Android TV. Dark Apple Home–inspired UI, mu
 | `VERIFICATION.md` | HTML prototype verification record |
 | `tests/`, `verification/` | HTML prototype browser checks and screenshots |
 
-APKs are **not** stored in git. Build them from `tv_app/`.
+APKs are **not** stored in git. Download a release build or build from `tv_app/`.
+
+### Latest APK
+
+- **[Download Home Cameras 0.1.2](https://github.com/4nkitd/home-cameras/releases/download/v0.1.2/Home-Cameras-0.1.2.apk)**
+- Release page: https://github.com/4nkitd/home-cameras/releases/tag/v0.1.2
+- SHA-256: `e800f8dad0b2d5f6d10ed26205547f6f024f5787858bfc6ea2bc94c2187bbc8c`
 
 ## Flutter app (`tv_app/`)
 

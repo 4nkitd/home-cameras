@@ -2,9 +2,9 @@
 
 Onboarding, playback-state and focus fixes, 2026-09-15.
 
-Download: https://tambourine-blunder.exe.xyz/Home-Cameras-0.1.2.apk
-
-Local copy: `../releases/Home-Cameras-0.1.2.apk`.
+- GitHub release: https://github.com/4nkitd/home-cameras/releases/tag/v0.1.2
+- APK: https://github.com/4nkitd/home-cameras/releases/download/v0.1.2/Home-Cameras-0.1.2.apk
+- Local copy (dev machine only): `../releases/Home-Cameras-0.1.2.apk`
 
 - Up/Down moves between username/password fields; Left/Right still edits text. IME Next/Done actions advance focus.
 - White primary buttons use a contrasting blue 3px focus border.
