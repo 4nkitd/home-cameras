@@ -13,8 +13,8 @@ Boss's explicit priority: performance comes before cosmetic effects.
 - Forward read-ahead is limited to 0.5 seconds. Automatic cache pausing is disabled. Actual glass-to-glass latency still depends on camera encoding, keyframes, TCP jitter and TV decoding.
 - Failed feeds retry with exponential backoff capped at 30 seconds. Only one retry timer runs per player.
 - The startup UI deadline is 30 seconds, without detaching the first-frame listener. A late frame cancels pending retries. Buffer stalls have a 15-second deadline; recovery clears the warning. Recoverable native error-log messages do not cause repeated player destruction/recreation.
-- Player resources are released when the app enters the background and recreated when it returns.
-- There are no per-frame Flutter state updates, timer-driven thumbnail downloads, continuous blur effects, analytics or recording jobs. The clock updates once per minute.
+- Viewer players are released when the app enters the background and recreated when it returns. Opt-in NVR sessions run independently in a foreground service.
+- There are no per-frame Flutter state updates or analytics. The clock updates once per minute. NVR status refreshes every three seconds while its controller is alive.
 - Setup uses blur only during a user-initiated modal, with background feeds suspended.
 
 ## Target-TV acceptance tests
@@ -36,3 +36,18 @@ If the decoder limit is reached, reduce the camera substream resolution/frame ra
 Unit and widget tests verify source selection, layout, focus and resource-owning widget transitions. The emulator integration test uses a local synthetic RTSP source and an ONVIF HTTP fixture. It is a correctness check, not a benchmark of Boss's television or proof of compatibility with a physical camera.
 
 No target-TV memory, latency, hardware-decoder or sustained performance numbers have been verified yet.
+
+## NVR limits
+
+- Two configured NVR cameras maximum in this version, in addition to visible live views.
+- Native recording copies compressed packets without re-encoding. Codec probing
+  can decode initial frames to establish stream and timestamp parameters.
+- Detection opens the configured substream when available, decodes keyframes in
+  software with one decoder thread, and samples about every two seconds. Model
+  inference uses two threads. Long camera keyframe intervals reduce detection
+  frequency. This is not continuous frame-by-frame object tracking.
+- Completed clips rotate at about one minute. Starting a new clip waits for an
+  RTSP connection and keyframe, so segment boundaries can have gaps.
+- Pause recording below the free-space reserve; detection can continue without
+  recording. No inference jobs run while detection is disabled.
+- Manufacturer sleep, power loss, force-stop and reboot can stop the NVR.

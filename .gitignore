@@ -24,6 +24,7 @@ tv_app/.pub/
 tv_app/coverage/
 tv_app/android/local.properties
 tv_app/android/.gradle/
+tv_app/android/app/src/main/jniLibs/
 tv_app/android/app/debug/
 tv_app/android/app/profile/
 tv_app/android/app/release/

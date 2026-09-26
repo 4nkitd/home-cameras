@@ -4,24 +4,32 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'live_feed.dart';
+import 'media_init.dart';
 import 'model.dart';
+import 'nvr_controller.dart';
+import 'nvr_runtime.dart';
+import 'nvr_ui.dart';
 import 'platform_bridge.dart';
 import 'setup_sheet.dart';
 import 'store.dart';
 import 'theme.dart';
 
+@pragma('vm:entry-point')
+Future<void> nvrMain() => NvrRuntime().run();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  MediaKit.ensureInitialized();
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
-  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  initializeMedia();
+  if (appFlavor != 'mobile') {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
   final preferences = await SharedPreferences.getInstance();
   runApp(
     HomeCamerasApp(store: AppStore(SecureCameraRepository(), preferences)),
@@ -56,6 +64,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   AppStore get store => widget.store;
+  late final NvrController _nvr;
   final Map<String, FocusNode> _cameraFocus = {};
   final Map<String, FeedStatus> _statuses = {};
   final _fullFeed = GlobalKey<LiveFeedState>();
@@ -83,11 +92,16 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _nvr = NvrController(store)..addListener(_nvrChanged);
     store.addListener(_changed);
     unawaited(_load());
     _clock = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
+  }
+
+  void _nvrChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _load() async {
@@ -102,6 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
     _awake();
+    if (widget.renderVideo) await _nvr.load();
   }
 
   void _awake() => unawaited(
@@ -173,6 +188,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (index >= 0) _pageIndex = index ~/ store.pageSize;
       }
     });
+    if (widget.renderVideo) await _nvr.syncCameras();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && result != null) _cameraFocus[result]?.requestFocus();
     });
@@ -261,6 +277,41 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _topbar(double width) {
+    if (width < 760) {
+      return SizedBox(
+        height: 64,
+        child: Row(
+          children: [
+            const Icon(Icons.home_outlined, color: sage),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Home Cameras',
+                style: TextStyle(fontSize: 19, color: chalk),
+              ),
+            ),
+            if (_page == 'home') ...[
+              TvButton(
+                'Favourites',
+                icon: _favorites ? Icons.star : Icons.star_outline,
+                compact: true,
+                onPressed: () => setState(() {
+                  _favorites = !_favorites;
+                  _pageIndex = 0;
+                }),
+              ),
+              const SizedBox(width: 6),
+              TvButton(
+                'Add camera',
+                icon: Icons.add,
+                compact: true,
+                onPressed: _setup,
+              ),
+            ],
+          ],
+        ),
+      );
+    }
     final compact = width < 1450;
     final time = TimeOfDay.now().format(context);
     final visible = _visible;
@@ -300,6 +351,7 @@ class _HomeScreenState extends State<HomeScreen> {
           for (final item in [
             ('home', 'Live view'),
             ('manage', 'Cameras'),
+            ('recordings', 'Recordings'),
             ('settings', 'Settings'),
           ])
             Padding(
@@ -308,11 +360,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 item.$2,
                 onPressed: () => _navigate(item.$1),
                 selected: _page == item.$1,
-                compact: width < 1000 && _page != item.$1,
-                icon: width < 1000 && _page != item.$1
+                compact: width < 1400 && _page != item.$1,
+                icon: width < 1400 && _page != item.$1
                     ? switch (item.$1) {
                         'home' => Icons.grid_view,
                         'manage' => Icons.videocam_outlined,
+                        'recordings' => Icons.video_library_outlined,
                         _ => Icons.tune,
                       }
                     : null,
@@ -420,13 +473,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   store.columns;
               return GridView.builder(
                 padding: const EdgeInsets.all(4),
-                physics: const NeverScrollableScrollPhysics(),
+                physics: constraints.maxWidth < 600
+                    ? null
+                    : const NeverScrollableScrollPhysics(),
                 itemCount: count,
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: store.columns,
+                  crossAxisCount: constraints.maxWidth < 600
+                      ? 1
+                      : store.columns,
                   crossAxisSpacing: 14,
                   mainAxisSpacing: 14,
-                  childAspectRatio: (tileWidth - 4) / (tileHeight - 4),
+                  childAspectRatio: constraints.maxWidth < 600
+                      ? 16 / 10
+                      : (tileWidth - 4) / (tileHeight - 4),
                 ),
                 itemBuilder: (context, index) {
                   if (index >= cameras.length) {
@@ -504,210 +563,241 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _manage() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        child: Row(
-          children: [
-            Text(
-              'Your cameras',
-              style: Theme.of(context).textTheme.headlineLarge,
-            ),
-            const Spacer(),
-            TvButton(
-              'Add camera',
-              onPressed: _setup,
-              primary: true,
-              icon: Icons.add,
-            ),
-          ],
-        ),
-      ),
-      Expanded(
-        child: store.cameras.isEmpty
-            ? EmptyView(
-                title: 'A home for your cameras.',
-                message: 'Add a camera to get started.',
-                action: TvButton(
-                  'Add camera',
-                  onPressed: _setup,
-                  primary: true,
-                ),
-              )
-            : ListView.separated(
-                itemCount: store.cameras.length,
-                separatorBuilder: (_, _) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final camera = store.cameras[index];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Row(
-                      children: [
-                        SizedBox(width: 28, child: Text('${index + 1}')),
-                        Container(
-                          width: 92,
-                          height: 58,
-                          decoration: BoxDecoration(
-                            color: panel,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(
-                            Icons.videocam_outlined,
-                            color: sage,
-                          ),
-                        ),
-                        const SizedBox(width: 20),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                camera.name,
-                                style: Theme.of(context).textTheme.titleLarge,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                '${camera.room.isEmpty ? 'Unassigned' : camera.room}${camera.favorite ? ' · Favourite' : ''}',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                        TvButton(
-                          'Move ${camera.name} up',
-                          onPressed: index == 0 || store.busy
-                              ? null
-                              : () => _mutate(() => store.move(camera.id, -1)),
-                          icon: Icons.keyboard_arrow_up,
-                          compact: true,
-                        ),
-                        const SizedBox(width: 6),
-                        TvButton(
-                          'Move ${camera.name} down',
-                          onPressed:
-                              index == store.cameras.length - 1 || store.busy
-                              ? null
-                              : () => _mutate(() => store.move(camera.id, 1)),
-                          icon: Icons.keyboard_arrow_down,
-                          compact: true,
-                        ),
-                        const SizedBox(width: 10),
-                        TvButton(
-                          'Edit camera',
-                          onPressed: () => _setup(camera),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-      ),
-    ],
-  );
-
-  Widget _settings() => SingleChildScrollView(
-    child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Make yourself at home.',
-            style: Theme.of(context).textTheme.headlineLarge,
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'A few preferences. A quieter way to keep an eye on things.',
-          ),
-          const SizedBox(height: 30),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _manage() => LayoutBuilder(
+    builder: (context, constraints) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          child: Row(
             children: [
               Expanded(
-                flex: 2,
-                child: Column(
-                  children: [
-                    ListTile(
-                      title: const Text('Home layout'),
-                      trailing: Text('${store.pageSize} camera tiles'),
-                      onTap: _layout,
-                      focusColor: panel,
-                    ),
-                    const Divider(),
-                    SwitchListTile(
-                      title: const Text('Keep the screen awake'),
-                      subtitle: const Text('While viewing cameras in this app'),
-                      value: store.keepAwake,
-                      onChanged: (v) => _mutate(() => store.setKeepAwake(v)),
-                    ),
-                    const Divider(),
-                    ListTile(
-                      title: const Text('Fullscreen quality'),
-                      trailing: Text(_qualityLabel(store.quality)),
-                      onTap: _quality,
-                      focusColor: panel,
-                    ),
-                    const Divider(),
-                    const ListTile(
-                      title: Text('Grid audio'),
-                      trailing: Text('Always muted'),
-                    ),
-                    const Divider(),
-                    const ListTile(
-                      title: Text('On app launch'),
-                      trailing: Text('Saved camera grid'),
-                    ),
-                    const Divider(),
-                    ListTile(
-                      title: const Text('About & open-source licenses'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => showLicensePage(
-                        context: context,
-                        applicationName: 'Home Cameras',
-                        applicationVersion: '0.1.2',
-                        applicationLegalese: 'Local-network camera viewer. Native playback libraries include mpv and FFmpeg; see the accompanying THIRD_PARTY.md for build and source links.',
-                      ),
-                      focusColor: panel,
-                    ),
-                  ],
+                child: Text(
+                  'Your cameras',
+                  style: Theme.of(context).textTheme.headlineLarge,
                 ),
               ),
-              const SizedBox(width: 36),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: panel,
-                    borderRadius: BorderRadius.circular(20),
+              TvButton(
+                'Add camera',
+                onPressed: _setup,
+                primary: true,
+                icon: Icons.add,
+                compact: constraints.maxWidth < 700,
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: store.cameras.isEmpty
+              ? EmptyView(
+                  title: 'A home for your cameras.',
+                  message: 'Add a camera to get started.',
+                  action: TvButton(
+                    'Add camera',
+                    onPressed: _setup,
+                    primary: true,
                   ),
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                )
+              : ListView.separated(
+                  itemCount: store.cameras.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final camera = store.cameras[index];
+                    if (constraints.maxWidth < 700) {
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 10,
+                        ),
+                        title: Text(camera.name),
+                        subtitle: Text(camera.room),
+                        trailing: TvButton(
+                          'Edit camera',
+                          icon: Icons.edit_outlined,
+                          compact: true,
+                          onPressed: () => _setup(camera),
+                        ),
+                        onTap: () => _setup(camera),
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Row(
+                        children: [
+                          SizedBox(width: 28, child: Text('${index + 1}')),
+                          Container(
+                            width: 92,
+                            height: 58,
+                            decoration: BoxDecoration(
+                              color: panel,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.videocam_outlined,
+                              color: sage,
+                            ),
+                          ),
+                          const SizedBox(width: 20),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  camera.name,
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  '${camera.room.isEmpty ? 'Unassigned' : camera.room}${camera.favorite ? ' · Favourite' : ''}',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                          TvButton(
+                            'Move ${camera.name} up',
+                            onPressed: index == 0 || store.busy
+                                ? null
+                                : () =>
+                                      _mutate(() => store.move(camera.id, -1)),
+                            icon: Icons.keyboard_arrow_up,
+                            compact: true,
+                          ),
+                          const SizedBox(width: 6),
+                          TvButton(
+                            'Move ${camera.name} down',
+                            onPressed:
+                                index == store.cameras.length - 1 || store.busy
+                                ? null
+                                : () => _mutate(() => store.move(camera.id, 1)),
+                            icon: Icons.keyboard_arrow_down,
+                            compact: true,
+                          ),
+                          const SizedBox(width: 10),
+                          TvButton(
+                            'Edit camera',
+                            onPressed: () => _setup(camera),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _settings() => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Make yourself at home.',
+              style: Theme.of(context).textTheme.headlineLarge,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'A few preferences. A quieter way to keep an eye on things.',
+            ),
+            const SizedBox(height: 30),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: Column(
                     children: [
-                      Icon(Icons.shield_outlined, size: 30, color: sage),
-                      SizedBox(height: 24),
-                      Text(
-                        'Home stays home.',
-                        style: TextStyle(fontSize: 20, color: chalk),
+                      ListTile(
+                        title: const Text('Home layout'),
+                        trailing: Text('${store.pageSize} camera tiles'),
+                        onTap: _layout,
+                        focusColor: panel,
                       ),
-                      SizedBox(height: 14),
-                      Text(
-                        'Your cameras connect directly to this TV. No cloud account, analytics or recording service.',
+                      const Divider(),
+                      SwitchListTile(
+                        title: const Text('Keep the screen awake'),
+                        subtitle: const Text(
+                          'While viewing cameras in this app',
+                        ),
+                        value: store.keepAwake,
+                        onChanged: (v) => _mutate(() => store.setKeepAwake(v)),
                       ),
-                      SizedBox(height: 20),
-                      Text(
-                        'Version 0.1.2 · Device-test build',
-                        style: TextStyle(fontSize: 11, color: sage),
+                      const Divider(),
+                      ListTile(
+                        title: const Text('Fullscreen quality'),
+                        trailing: Text(_qualityLabel(store.quality)),
+                        onTap: _quality,
+                        focusColor: panel,
+                      ),
+                      const Divider(),
+                      const ListTile(
+                        title: Text('Grid audio'),
+                        trailing: Text('Always muted'),
+                      ),
+                      const Divider(),
+                      const ListTile(
+                        title: Text('On app launch'),
+                        trailing: Text('Saved camera grid'),
+                      ),
+                      const Divider(),
+                      ListTile(
+                        title: const Text('About & open-source licenses'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => showLicensePage(
+                          context: context,
+                          applicationName: 'Home Cameras',
+                          applicationVersion: '0.2.0',
+                          applicationLegalese: 'Local-network camera viewer. Native playback libraries include mpv and FFmpeg; see the accompanying THIRD_PARTY.md for build and source links.',
+                        ),
+                        focusColor: panel,
                       ),
                     ],
                   ),
                 ),
-              ),
-            ],
-          ),
-        ],
+                if (constraints.maxWidth >= 700) ...[
+                  const SizedBox(width: 36),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: panel,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.shield_outlined, size: 30, color: sage),
+                          SizedBox(height: 24),
+                          Text(
+                            'Home stays home.',
+                            style: TextStyle(fontSize: 20, color: chalk),
+                          ),
+                          SizedBox(height: 14),
+                          Text(
+                            'Your cameras connect directly to this device. Recordings and detection stay here. No cloud account or analytics.',
+                          ),
+                          SizedBox(height: 20),
+                          Text(
+                            'Version 0.2.0 · Offline NVR',
+                            style: TextStyle(fontSize: 11, color: sage),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            NvrSettingsPanel(
+              nvr: _nvr,
+              onRecordings: () => _navigate('recordings'),
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -842,6 +932,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _nvr.removeListener(_nvrChanged);
+    _nvr.dispose();
     store.removeListener(_changed);
     _clock?.cancel();
     for (final node in _cameraFocus.values) {
@@ -860,6 +952,37 @@ class _HomeScreenState extends State<HomeScreen> {
     child: CallbackShortcuts(
       bindings: {const SingleActivator(LogicalKeyboardKey.escape): _back},
       child: Scaffold(
+        bottomNavigationBar:
+            MediaQuery.sizeOf(context).width < 820 && _fullId == null
+            ? NavigationBar(
+                selectedIndex: [
+                  'home',
+                  'manage',
+                  'recordings',
+                  'settings',
+                ].indexOf(_page),
+                onDestinationSelected: (i) =>
+                    _navigate(['home', 'manage', 'recordings', 'settings'][i]),
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.grid_view),
+                    label: 'Live',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.videocam_outlined),
+                    label: 'Cameras',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.video_library_outlined),
+                    label: 'Recordings',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.tune),
+                    label: 'Settings',
+                  ),
+                ],
+              )
+            : null,
         body: !store.ready
             ? store.loadError != null
                   ? EmptyView(
@@ -877,7 +1000,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ? _fullscreen()
             : SafeArea(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 30),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: MediaQuery.sizeOf(context).width < 820
+                        ? 16
+                        : 30,
+                  ),
                   child: LayoutBuilder(
                     builder: (context, constraints) => Column(
                       children: [
@@ -886,26 +1013,28 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: switch (_page) {
                             'manage' => _manage(),
                             'settings' => _settings(),
+                            'recordings' => RecordingsScreen(nvr: _nvr),
                             _ => _grid(),
                           },
                         ),
                         const SizedBox(height: 8),
-                        const SizedBox(
-                          height: 30,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                '↑ ↓ ← →  Navigate      OK  Select      Back  Return',
-                                style: TextStyle(fontSize: 10, color: fog),
-                              ),
-                              Text(
-                                'Local network only  ·  Grid muted',
-                                style: TextStyle(fontSize: 10, color: fog),
-                              ),
-                            ],
+                        if (constraints.maxWidth >= 760)
+                          const SizedBox(
+                            height: 30,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  '↑ ↓ ← →  Navigate      OK  Select      Back  Return',
+                                  style: TextStyle(fontSize: 10, color: fog),
+                                ),
+                                Text(
+                                  'Local network only  ·  Grid muted',
+                                  style: TextStyle(fontSize: 10, color: fog),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
                       ],
                     ),
                   ),

@@ -11,12 +11,14 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    private var nvrBridge: NvrBridge? = null
     private var multicastLock: WifiManager.MulticastLock? = null
     private var permissionResult: MethodChannel.Result? = null
     private val networkPermission = "android.permission.ACCESS_LOCAL_NETWORK"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        nvrBridge = NvrBridge(this, flutterEngine, this)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "in.dagar.home_cameras/tv")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -73,9 +75,15 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        nvrBridge?.close()
         if (multicastLock?.isHeld == true) multicastLock?.release()
         permissionResult?.success(false)
         permissionResult = null
         super.onDestroy()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (nvrBridge?.onActivityResult(requestCode, resultCode, data) == true) return
+        super.onActivityResult(requestCode, resultCode, data)
     }
 }

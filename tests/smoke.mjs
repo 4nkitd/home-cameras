@@ -1,14 +1,11 @@
 import assert from 'node:assert/strict';
-import { readdir, mkdir, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const corePath = process.env.PLAYWRIGHT_CORE_PATH || '/opt/homebrew/lib/node_modules/agent-browser/node_modules/playwright-core/index.mjs';
 const { chromium } = await import(pathToFileURL(corePath));
-const cloakRoot = resolve(homedir(), '.cloakbrowser');
-const versions = (await readdir(cloakRoot)).filter(name => name.startsWith('chromium-')).sort();
-const executablePath = process.env.AGENT_BROWSER_EXECUTABLE_PATH || resolve(cloakRoot, versions.at(-1), 'Chromium.app/Contents/MacOS/Chromium');
+const executablePath = process.env.AGENT_BROWSER_EXECUTABLE_PATH || '/Applications/Helium.app/Contents/MacOS/Helium';
 const base = process.env.PROTOTYPE_URL || 'http://127.0.0.1:4173';
 const evidence = resolve('verification');
 await mkdir(evidence, { recursive: true });
